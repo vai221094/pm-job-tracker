@@ -1,0 +1,39 @@
+name: PM Job Tracker
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # Runs every hour
+  workflow_dispatch:        # Lets you run it manually too
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          GMAIL_SENDER:   ${{ secrets.GMAIL_SENDER }}
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_RECEIVER }}
+        run: python scraper.py
+
+      - name: Save seen_jobs.json back to repo
+        run: |
+          git config user.name  "Job Tracker Bot"
+          git config user.email "bot@github.com"
+          git add seen_jobs.json
+          git diff --cached --quiet || git commit -m "Update seen jobs [skip ci]"
+          git push
