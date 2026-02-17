@@ -2,8 +2,8 @@ name: PM Job Tracker
 
 on:
   schedule:
-    - cron: '0 * * * *'   # Runs every hour
-  workflow_dispatch:        # Lets you run it manually too
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   scrape:
@@ -27,7 +27,7 @@ jobs:
         env:
           GMAIL_SENDER:   ${{ secrets.GMAIL_SENDER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
-          GMAIL_PASSWORD: ${{ secrets.GMAIL_RECEIVER }}
+          GMAIL_RECEIVER: ${{ secrets.GMAIL_RECEIVER }}
         run: python scraper.py
 
       - name: Save seen_jobs.json back to repo
