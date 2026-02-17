@@ -12,8 +12,19 @@ GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD")
 GMAIL_RECEIVER = os.environ.get("GMAIL_RECEIVER")
 
 KEYWORDS = [
-    "product manager", "product management", "senior pm",
-    "senior product manager", "lead product manager"
+    "product manager",
+    "senior product manager",
+    "lead product manager",
+    "product management"
+]
+
+# Titles to EXCLUDE even if they contain a keyword
+# e.g. "Staff PM", "Principal PM", "Technical PM", "Marketing PM"
+EXCLUDE_TITLE_WORDS = [
+    "staff ", "principal ", "technical program", "marketing",
+    "data science", "software engineer", "engineer", "analyst",
+    "scientist", "designer", "researcher", "intern", "contract",
+    "stagiaire", "apprentice", "manager, program", "program manager"
 ]
 
 # Words that indicate a job is NOT in India — used to filter out false positives
@@ -21,7 +32,19 @@ EXCLUDE_LOCATIONS = [
     "united states", "usa", "us only", "new york", "san francisco", "seattle",
     "london", "uk only", "united kingdom", "singapore", "dubai", "canada",
     "australia", "germany", "france", "netherlands", "ireland", "poland",
-    "mexico", "brazil", "japan", "korea", "china", "hong kong"
+    "mexico", "brazil", "japan", "korea", "china", "hong kong",
+    # Amazon-style country codes
+    "us, ", "us,", ", tx,", ", wa,", ", ca,", ", ny,",
+    "za, ", "za,",   # South Africa
+    "gb, ", "gb,",   # Great Britain
+    "sg, ", "sg,",   # Singapore
+    "au, ", "au,",   # Australia
+    "de, ", "de,",   # Germany
+    "nl, ", "nl,",   # Netherlands
+    "ca, ", "ca,",   # Canada
+    "jp, ", "jp,",   # Japan
+    "cape town", "austin", "bellevue", "redmond", "cupertino",
+    "menlo park", "new york city", "chicago", "toronto", "vancouver",
 ]
 
 # Words that confirm India location
@@ -314,7 +337,36 @@ def save_seen_jobs(seen):
         json.dump(seen, f, indent=2)
 
 def is_relevant_title(title):
-    return any(kw in title.lower() for kw in KEYWORDS)
+    t = title.lower().strip()
+    # Must match at least one keyword exactly
+    if not any(kw in t for kw in KEYWORDS):
+        return False
+    # Must NOT match any excluded title words
+    if any(ex in t for ex in EXCLUDE_TITLE_WORDS):
+        return False
+    return True
+
+def is_valid_job_link(link, base_url):
+    """Return True only if the link looks like a specific job posting, not a homepage."""
+    if not link or not link.startswith("http"):
+        return False
+    # Reject if link equals the base career page URL (i.e. no specific job)
+    if normalize_link(link) == normalize_link(base_url):
+        return False
+    # Reject very short paths — likely homepage or section links
+    parsed = urlparse(link)
+    path_parts = [p for p in parsed.path.split("/") if p]
+    if len(path_parts) < 2:
+        return False
+    return True
+
+def validate_link(link, timeout=8):
+    """Check if a link actually responds with 200. Returns True if valid."""
+    try:
+        r = requests.head(link, headers=HEADERS, timeout=timeout, allow_redirects=True)
+        return r.status_code < 400
+    except:
+        return False
 
 def is_india_location(location_text):
     """Return True if location confirms India, False if it confirms elsewhere, None if unknown."""
@@ -559,23 +611,24 @@ def scrape_generic(info):
     try:
         r    = requests.get(info["url"], headers=HEADERS, timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
-        for tag in soup.find_all(["a", "h2", "h3", "h4", "li", "div", "span"]):
+        # Only look at <a> tags — we need a real clickable job link
+        for tag in soup.find_all("a", href=True):
             text = tag.get_text(strip=True)
             if not (10 < len(text) < 120) or text in seen_titles:
                 continue
             if not is_relevant_title(text):
                 continue
-            # For generic pages we trust the company's India-specific URL
-            # but still reject if text itself mentions another country
             if is_india_location(text) == False:
                 continue
-            seen_titles.add(text)
-            link = tag.get("href") if tag.name == "a" else None
-            if link and link.startswith("/"):
+            # Build full link
+            link = tag.get("href", "")
+            if link.startswith("/"):
                 b    = urlparse(info["url"])
                 link = f"{b.scheme}://{b.netloc}{link}"
-            if not link or not link.startswith("http"):
-                link = info["url"]
+            # Only keep links that look like specific job postings
+            if not is_valid_job_link(link, info["url"]):
+                continue
+            seen_titles.add(text)
             jobs.append({
                 "id":       f"{info['company']}_{text[:50]}".replace(" ", "_"),
                 "title":    text,
@@ -629,13 +682,23 @@ def run():
             new_jobs.append(job)
             print(f"  ✨ NEW: {job['title']} @ {job['company']} [{job.get('location','')}]")
 
+    # ── Step 5: Validate links — remove dead links before emailing
+    print(f"\n🔎 Validating {len(new_jobs)} job links...")
+    valid_jobs = []
+    for job in new_jobs:
+        if validate_link(job["link"]):
+            valid_jobs.append(job)
+        else:
+            print(f"  ❌ Dead link skipped: {job['title']} — {job['link']}")
+    print(f"  ✅ {len(valid_jobs)} valid links remaining")
+
     save_seen_jobs(seen)
 
-    # ── Step 5: Send email
+    # ── Step 6: Send email
     print(f"\n{'─'*55}")
-    if new_jobs:
-        print(f"📧 {len(new_jobs)} new job(s) found! Sending email...")
-        send_email(new_jobs)
+    if valid_jobs:
+        print(f"📧 {len(valid_jobs)} new job(s) found! Sending email...")
+        send_email(valid_jobs)
     else:
         print("✅ No new jobs this run. All quiet.")
     print(f"{'='*55}\n")
