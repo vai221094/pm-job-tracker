@@ -14,7 +14,13 @@ GMAIL_RECEIVER = os.environ.get("GMAIL_RECEIVER")
 KEYWORDS = [
     "product manager",
     "senior product manager",
+    "associate product manager",
+    "group product manager",
     "lead product manager",
+    "director of product management",
+    "head of product",
+    "vp of product",
+    "vp, product",
     "product management"
 ]
 
@@ -437,16 +443,19 @@ def send_email(new_jobs):
       </div>
     </body></html>"""
 
+    # Parse recipients — handle comma-separated emails
+    recipients = [email.strip() for email in GMAIL_RECEIVER.split(",")]
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"]    = GMAIL_SENDER
-    msg["To"]      = GMAIL_RECEIVER
+    msg["To"]      = ", ".join(recipients)  # Display all recipients in To: header
     msg.attach(MIMEText(html, "html"))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
         s.login(GMAIL_SENDER, GMAIL_PASSWORD)
-        s.sendmail(GMAIL_SENDER, GMAIL_RECEIVER, msg.as_string())
-    print(f"✅ Email sent with {len(new_jobs)} jobs.")
+        s.sendmail(GMAIL_SENDER, recipients, msg.as_string())  # Send to list of emails
+    print(f"✅ Email sent to {len(recipients)} recipient(s) with {len(new_jobs)} jobs.")
 
 # ── SCRAPERS ───────────────────────────────────────────────────
 
